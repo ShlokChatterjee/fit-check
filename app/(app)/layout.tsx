@@ -29,6 +29,9 @@ export default async function AppLayout({
               <Link href="/outfits" className="text-black/70 hover:underline dark:text-white/70">
                 Outfits
               </Link>
+              <Link href="/suggestions" className="text-black/70 hover:underline dark:text-white/70">
+                Suggestions
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4">
