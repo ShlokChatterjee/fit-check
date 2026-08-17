@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Force the deterministic fallback path so this suite stays offline and stable
+// even when AI_PROVIDER_API_KEY is set. Live behavior lives in
+// provider.integration.test.ts.
+vi.mock("./provider", async (importActual) => ({
+  ...(await importActual<typeof import("./provider")>()),
+  isAiConfigured: () => false,
+}));
 
 import { interpretRequest } from "./interpret-request";
 

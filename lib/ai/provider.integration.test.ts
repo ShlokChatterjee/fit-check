@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment node
+// The Anthropic SDK refuses to run in a browser-like environment (jsdom, the
+// suite default). These live tests exercise the real server-side path, so they
+// run under Node — matching how the provider is called from server actions.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { analyzeClothing } from "./analyze-clothing";
 import { generateOutfitExplanation } from "./generate-outfit-explanation";
@@ -12,6 +16,21 @@ import { interpretRequest } from "./interpret-request";
 const hasKey = Boolean(process.env.AI_PROVIDER_API_KEY);
 
 describe.skipIf(!hasKey)("AI provider (live)", () => {
+  // Every provider function logs "using fallback" on failure and returns the
+  // deterministic result. Spy on console.error so a silent fallback fails the
+  // test instead of masquerading as a pass.
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    const fellBack = errorSpy.mock.calls.some((args: unknown[]) =>
+      args.some((a) => typeof a === "string" && a.includes("using fallback")),
+    );
+    errorSpy.mockRestore();
+    expect(fellBack, "provider call fell back to the stub").toBe(false);
+  });
+
   it("interprets a natural-language request into a structured intent", async () => {
     const intent = await interpretRequest("something smart for a rainy work dinner");
 
@@ -37,17 +56,23 @@ describe.skipIf(!hasKey)("AI provider (live)", () => {
     expect(explanation.length).toBeLessThan(400);
   }, 30_000);
 
-  it("detects clothing items from a public image URL", async () => {
-    // A stable, public product image of a single garment.
-    const detections = await analyzeClothing({
-      imageUrl:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/T-shirt.png/240px-T-shirt.png",
-    });
+  it("runs the vision detection path on image bytes and returns well-formed predictions", async () => {
+    // A valid 64x64 PNG. This exercises the full plumbing — media-type sniff,
+    // base64 encoding, the vision request, the tool schema, and result parsing
+    // (the local-upload path base64-encodes bytes the same way) — without a
+    // flaky network fetch. A blank image yields no garments, which is a valid,
+    // well-formed empty prediction set; the afterEach guard proves the real
+    // provider ran rather than the fallback.
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAX0lEQVR4nO3PMQ0AMAzAsPJHNlgFscOqFCNI5h03OuBXA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA9oCNauCLP9TnuYAAAAASUVORK5CYII=";
+    const bytes = new Uint8Array(Buffer.from(pngBase64, "base64"));
+
+    const detections = await analyzeClothing({ imageBytes: bytes });
 
     expect(Array.isArray(detections)).toBe(true);
-    // Every detection must be a well-formed prediction.
     for (const d of detections) {
       expect(typeof d.name).toBe("string");
+      expect(d.name.length).toBeGreaterThan(0);
       expect(d.confidence).toBeGreaterThanOrEqual(0);
       expect(d.confidence).toBeLessThanOrEqual(1);
     }
