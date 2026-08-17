@@ -7,6 +7,7 @@ import type { Category } from "@/app/generated/prisma/client";
 import {
   generateOutfitAction,
   showAnotherOutfitAction,
+  submitFeedbackAction,
 } from "@/lib/outfits/actions";
 import type { ServedOutfit } from "@/lib/outfits/types";
 import { CATEGORY_LABELS } from "@/lib/wardrobe/labels";
@@ -23,6 +24,8 @@ type ViewState =
 export function OutfitGenerator({ baselineOk }: { baselineOk: boolean }) {
   const [request, setRequest] = useState("");
   const [view, setView] = useState<ViewState>({ kind: "idle" });
+  // Feedback is keyed by outfit id so "show another" (a new outfit) starts fresh.
+  const [feedbackByOutfit, setFeedbackByOutfit] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
 
   function generate() {
@@ -47,6 +50,17 @@ export function OutfitGenerator({ baselineOk }: { baselineOk: boolean }) {
         setView({ kind: "no_more", outfit: view.outfit });
       }
     });
+  }
+
+  function rate(outfitId: string, liked: boolean) {
+    startTransition(async () => {
+      await submitFeedbackAction(outfitId, liked);
+      setFeedbackByOutfit((prev) => ({ ...prev, [outfitId]: liked }));
+    });
+  }
+
+  function reset() {
+    setView({ kind: "idle" });
   }
 
   const currentOutfit =
@@ -98,7 +112,10 @@ export function OutfitGenerator({ baselineOk }: { baselineOk: boolean }) {
           outfit={currentOutfit}
           isPending={isPending}
           noMore={view.kind === "no_more"}
+          feedback={feedbackByOutfit[currentOutfit.outfitId]}
           onShowAnother={() => showAnother(currentOutfit.outfitId)}
+          onRate={(liked) => rate(currentOutfit.outfitId, liked)}
+          onReset={reset}
         />
       ) : null}
     </div>
@@ -109,12 +126,18 @@ function OutfitCard({
   outfit,
   isPending,
   noMore,
+  feedback,
   onShowAnother,
+  onRate,
+  onReset,
 }: {
   outfit: ServedOutfit;
   isPending: boolean;
   noMore: boolean;
+  feedback: boolean | undefined;
   onShowAnother: () => void;
+  onRate: (liked: boolean) => void;
+  onReset: () => void;
 }) {
   const canShowAnother = outfit.hasMore && !noMore;
 
@@ -146,6 +169,41 @@ function OutfitCard({
         ))}
       </div>
 
+      {/* Feedback — outfit-level like/dislike (Feature 7). Optional, never required. */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-black/5 pt-4 dark:border-white/10">
+        <button
+          type="button"
+          aria-pressed={feedback === true}
+          onClick={() => onRate(true)}
+          disabled={isPending}
+          className={`rounded-full border px-4 py-2 text-sm transition-colors disabled:opacity-40 ${
+            feedback === true
+              ? "border-green-600 bg-green-600/10 text-green-700 dark:border-green-400 dark:text-green-300"
+              : "border-black/10 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          }`}
+        >
+          👍 Like
+        </button>
+        <button
+          type="button"
+          aria-pressed={feedback === false}
+          onClick={() => onRate(false)}
+          disabled={isPending}
+          className={`rounded-full border px-4 py-2 text-sm transition-colors disabled:opacity-40 ${
+            feedback === false
+              ? "border-red-600 bg-red-600/10 text-red-700 dark:border-red-400 dark:text-red-300"
+              : "border-black/10 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          }`}
+        >
+          👎 Dislike
+        </button>
+        {feedback !== undefined ? (
+          <span className="text-xs text-black/50 dark:text-white/50">
+            Thanks — we&apos;ll use this to tune future suggestions.
+          </span>
+        ) : null}
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -154,6 +212,14 @@ function OutfitCard({
           className="rounded-full border border-black/10 px-4 py-2 text-sm transition-colors hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
         >
           {isPending ? "Loading…" : "Show another"}
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={isPending}
+          className="rounded-full border border-black/10 px-4 py-2 text-sm transition-colors hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/10"
+        >
+          New outfit
         </button>
         {noMore || !outfit.hasMore ? (
           <span className="text-xs text-black/50 dark:text-white/50">

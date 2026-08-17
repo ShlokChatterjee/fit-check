@@ -2,6 +2,7 @@
 
 import { requireUserId } from "@/lib/auth/guards";
 
+import { submitFeedback } from "./feedback";
 import * as service from "./service";
 import type { GenerateOutfitResult, ShowAnotherResult } from "./types";
 
@@ -23,4 +24,13 @@ export async function showAnotherOutfitAction(
 ): Promise<ShowAnotherResult> {
   const userId = await requireUserId();
   return service.showAnotherOutfit(userId, previousOutfitId);
+}
+
+/** Record an outfit-level like (true) or dislike (false) for the user (Feature 7). */
+export async function submitFeedbackAction(
+  outfitId: string,
+  liked: boolean,
+): Promise<void> {
+  const userId = await requireUserId();
+  await submitFeedback(userId, outfitId, liked);
 }
