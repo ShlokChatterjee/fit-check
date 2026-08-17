@@ -1,6 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Category } from "@/app/generated/prisma/enums";
+
+// Force the deterministic fallback path so this suite is offline and stable
+// even when AI_PROVIDER_API_KEY is present in the environment. Live provider
+// behavior is covered by provider.integration.test.ts.
+vi.mock("./provider", async (importActual) => ({
+  ...(await importActual<typeof import("./provider")>()),
+  isAiConfigured: () => false,
+}));
+
 import { analyzeClothing } from "./analyze-clothing";
 
 describe("analyzeClothing (stub)", () => {
