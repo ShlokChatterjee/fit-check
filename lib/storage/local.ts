@@ -36,9 +36,18 @@ export async function saveUploadedImage(file: File): Promise<string> {
     throw new ImageUploadError("Unsupported image type");
   }
 
+  const bytes = Buffer.from(await file.arrayBuffer());
+  return saveImageBuffer(bytes, file.type);
+}
+
+/**
+ * Persist already-decoded image bytes (e.g. downloaded from Google Photos) and
+ * return the public URL path. Unknown mime types fall back to a .jpg extension.
+ */
+export async function saveImageBuffer(bytes: Buffer, mimeType: string): Promise<string> {
+  const ext = EXT_BY_TYPE[mimeType] ?? "jpg";
   const name = `${randomUUID()}.${ext}`;
   await mkdir(UPLOAD_DIR, { recursive: true });
-  const bytes = Buffer.from(await file.arrayBuffer());
   await writeFile(path.join(UPLOAD_DIR, name), bytes);
   return `/uploads/${name}`;
 }

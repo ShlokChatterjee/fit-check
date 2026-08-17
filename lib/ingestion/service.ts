@@ -42,6 +42,26 @@ export async function runDetection(eventId: string, imageUrl: string): Promise<v
   });
 }
 
+/**
+ * The user's oldest still-unreviewed ingestion event, excluding one id. Used to
+ * chain review across a multi-photo Google Photos import so each event gets seen.
+ */
+export async function getNextPendingEventId(
+  userId: string,
+  excludeId?: string,
+): Promise<string | null> {
+  const next = await prisma.ingestionEvent.findFirst({
+    where: {
+      userId,
+      status: IngestStatus.PENDING_REVIEW,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  return next?.id ?? null;
+}
+
 export async function getIngestionEvent(userId: string, id: string) {
   return prisma.ingestionEvent.findFirst({
     where: { id, userId },

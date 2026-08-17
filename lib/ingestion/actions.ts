@@ -7,8 +7,14 @@ import { SourceType } from "@/app/generated/prisma/enums";
 import { requireUserId } from "@/lib/auth/guards";
 import { saveUploadedImage } from "@/lib/storage/local";
 import {
+  importPickedPhotos,
+  isPickerSessionReady,
+  startPickerSession,
+} from "./google-photos";
+import {
   confirmDetections,
   createIngestionEvent,
+  getNextPendingEventId,
   runDetection,
 } from "./service";
 import type { DetectionDecision, NewItemInput } from "./types";
@@ -31,7 +37,33 @@ export async function uploadAndDetect(formData: FormData): Promise<void> {
   redirect(`/ingest/${event.id}/review`);
 }
 
-/** Apply review decisions (Feature 5) and return to the wardrobe. */
+/** Start a Google Photos picker session (Feature 3, Method B). */
+export async function startGooglePhotosPickerAction(): Promise<{
+  sessionId: string;
+  pickerUri: string;
+}> {
+  const userId = await requireUserId();
+  return startPickerSession(userId);
+}
+
+/** Poll whether the user has finished picking photos. */
+export async function pollGooglePhotosPickerAction(sessionId: string): Promise<boolean> {
+  const userId = await requireUserId();
+  return isPickerSessionReady(userId, sessionId);
+}
+
+/** Import the picked photos into the detection pipeline and open the first review. */
+export async function importGooglePhotosAction(sessionId: string): Promise<void> {
+  const userId = await requireUserId();
+  const eventIds = await importPickedPhotos(userId, sessionId);
+  if (eventIds.length === 0) {
+    throw new Error("No photos were selected");
+  }
+  revalidatePath("/wardrobe");
+  redirect(`/ingest/${eventIds[0]}/review`);
+}
+
+/** Apply review decisions (Feature 5), then chain to the next unreviewed event. */
 export async function confirmDetectionsAction(
   eventId: string,
   decisions: DetectionDecision[],
@@ -40,5 +72,9 @@ export async function confirmDetectionsAction(
   const userId = await requireUserId();
   await confirmDetections(userId, eventId, decisions, newItems);
   revalidatePath("/wardrobe");
-  redirect("/wardrobe");
+
+  // A multi-photo Google Photos import creates several pending events — send the
+  // user to the next one, or back to the wardrobe when none remain.
+  const nextEventId = await getNextPendingEventId(userId, eventId);
+  redirect(nextEventId ? `/ingest/${nextEventId}/review` : "/wardrobe");
 }

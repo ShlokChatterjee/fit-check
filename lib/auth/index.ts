@@ -14,6 +14,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Request the restricted Photos Picker scope so users can add clothing
+      // from Google Photos (Feature 3, Method B). This grants access ONLY to
+      // items the user explicitly picks — never their full library. offline
+      // access + consent prompt ensure a refresh token is stored so the app can
+      // call the Picker API on the user's behalf after the first hour.
+      authorization: {
+        params: {
+          scope:
+            "openid email profile https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
     }),
   ],
   callbacks: {

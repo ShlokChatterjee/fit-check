@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { GooglePhotosPicker } from "@/components/ingest/GooglePhotosPicker";
 import { requireUser } from "@/lib/auth/guards";
 import { uploadAndDetect } from "@/lib/ingestion/actions";
 
@@ -50,6 +51,17 @@ export default async function NewIngestionPage() {
           </Link>
         </div>
       </form>
+
+      <div className="flex items-center gap-3 text-xs text-black/40 dark:text-white/40">
+        <span className="h-px flex-1 bg-black/10 dark:bg-white/15" />
+        or
+        <span className="h-px flex-1 bg-black/10 dark:bg-white/15" />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">From Google Photos</span>
+        <GooglePhotosPicker />
+      </div>
     </div>
   );
 }
