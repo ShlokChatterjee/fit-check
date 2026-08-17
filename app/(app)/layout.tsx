@@ -18,9 +18,19 @@ export default async function AppLayout({
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-black/10 dark:border-white/15">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-4">
-          <Link href="/wardrobe" className="text-lg font-semibold tracking-tight">
-            Wardrobe Agent
-          </Link>
+          <div className="flex items-center gap-6">
+            <Link href="/wardrobe" className="text-lg font-semibold tracking-tight">
+              Wardrobe Agent
+            </Link>
+            <nav className="flex items-center gap-4 text-sm">
+              <Link href="/wardrobe" className="text-black/70 hover:underline dark:text-white/70">
+                Wardrobe
+              </Link>
+              <Link href="/outfits" className="text-black/70 hover:underline dark:text-white/70">
+                Outfits
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-4">
             <span className="hidden text-sm text-black/60 sm:inline dark:text-white/60">
               {session?.user?.name ?? session?.user?.email}
