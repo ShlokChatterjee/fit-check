@@ -2,8 +2,10 @@ import { Category } from "@/app/generated/prisma/enums";
 import type { WardrobeItem } from "@/app/generated/prisma/client";
 import type { OutfitIntent } from "@/lib/ai/types";
 
+import { emptyPreferences, type PreferenceData } from "@/lib/preferences/types";
+
 import { groupByCategory } from "./constraints";
-import { scoreCandidate, type PreferenceWeights } from "./scoring";
+import { scoreCandidate } from "./scoring";
 import type { OutfitCandidate, SlottedItem } from "./types";
 
 // Candidate generation (Feature 6). The application — not the LLM — combines
@@ -19,12 +21,12 @@ const MAX_CANDIDATES = 60;
  * Build a ranked list of complete outfit candidates from the user's active
  * items. Returns an empty list when a required slot is uncovered (the caller
  * guards this via `missingRequiredSlots` before generation). Deterministic
- * given the same items, intent, and weights.
+ * given the same items, intent, and preferences.
  */
 export function buildRankedCandidates(
   activeItems: WardrobeItem[],
   intent: OutfitIntent,
-  weights: PreferenceWeights = {},
+  prefs: PreferenceData = emptyPreferences(),
 ): OutfitCandidate[] {
   const byCategory = topPerSlot(groupByCategory(activeItems));
   const tops = byCategory.get(Category.TOPS) ?? [];
@@ -55,7 +57,7 @@ export function buildRankedCandidates(
           slotted.push({ slot: Category.ACCESSORIES, item: accessories[0] });
         }
         const items = slotted.map((s) => s.item);
-        candidates.push({ items: slotted, score: scoreCandidate(items, intent, weights) });
+        candidates.push({ items: slotted, score: scoreCandidate(items, intent, prefs) });
       }
     }
   }

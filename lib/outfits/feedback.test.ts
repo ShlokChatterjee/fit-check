@@ -1,19 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Category } from "@/app/generated/prisma/enums";
+
 vi.mock("@/lib/db/prisma", () => ({
   prisma: {
     outfit: { findFirst: vi.fn() },
     feedback: { upsert: vi.fn(), findFirst: vi.fn() },
   },
 }));
+vi.mock("@/lib/preferences/service", () => ({ recordOutfitFeedback: vi.fn() }));
 
 import { prisma } from "@/lib/db/prisma";
+import { recordOutfitFeedback } from "@/lib/preferences/service";
 
 import { submitFeedback } from "./feedback";
 import { OutfitNotFoundError } from "./types";
 
 const outfit = prisma.outfit as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const feedback = prisma.feedback as unknown as Record<string, ReturnType<typeof vi.fn>>;
+const recordFeedbackMock = recordOutfitFeedback as unknown as ReturnType<typeof vi.fn>;
+
+// An owned outfit with two constituent items (as returned by the include).
+const ownedOutfit = {
+  id: "outfit-1",
+  items: [
+    { wardrobeItem: { id: "top-1", category: Category.TOPS, color: "navy" } },
+    { wardrobeItem: { id: "shoes-1", category: Category.SHOES, color: "white" } },
+  ],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -29,37 +43,43 @@ describe("submitFeedback", () => {
       OutfitNotFoundError,
     );
     expect(feedback.upsert).not.toHaveBeenCalled();
+    expect(recordFeedbackMock).not.toHaveBeenCalled();
   });
 
-  it("upserts a like scoped to the owned outfit", async () => {
-    outfit.findFirst.mockResolvedValue({ id: "outfit-1" });
+  it("upserts a like and folds it into the preference model", async () => {
+    outfit.findFirst.mockResolvedValue(ownedOutfit);
 
     const result = await submitFeedback("user-1", "outfit-1", true);
 
-    // Ownership is checked before any write.
-    expect(outfit.findFirst).toHaveBeenCalledWith({
-      where: { id: "outfit-1", userId: "user-1" },
-      select: { id: true },
-    });
-    // Upsert keys on the unique outfitId and carries the user + rating.
     expect(feedback.upsert).toHaveBeenCalledWith({
       where: { outfitId: "outfit-1" },
       create: { userId: "user-1", outfitId: "outfit-1", liked: true },
       update: { liked: true },
     });
+    // The constituent items are passed to preference learning with a "like".
+    expect(recordFeedbackMock).toHaveBeenCalledWith(
+      "user-1",
+      [
+        { id: "top-1", category: Category.TOPS, color: "navy" },
+        { id: "shoes-1", category: Category.SHOES, color: "white" },
+      ],
+      "like",
+    );
     expect(result.liked).toBe(true);
   });
 
-  it("records a dislike (liked=false) and can overwrite a prior rating", async () => {
-    outfit.findFirst.mockResolvedValue({ id: "outfit-1" });
+  it("records a dislike as a penalizing signal", async () => {
+    outfit.findFirst.mockResolvedValue(ownedOutfit);
 
     await submitFeedback("user-1", "outfit-1", false);
 
     expect(feedback.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { outfitId: "outfit-1" },
-        update: { liked: false },
-      }),
+      expect.objectContaining({ update: { liked: false } }),
+    );
+    expect(recordFeedbackMock).toHaveBeenCalledWith(
+      "user-1",
+      expect.any(Array),
+      "dislike",
     );
   });
 });

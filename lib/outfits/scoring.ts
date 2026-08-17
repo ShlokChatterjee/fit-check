@@ -1,30 +1,22 @@
 import { Category } from "@/app/generated/prisma/enums";
 import type { WardrobeItem } from "@/app/generated/prisma/client";
 import type { OutfitIntent } from "@/lib/ai/types";
+import { pairKeys } from "@/lib/preferences/model";
+import { emptyPreferences, type PreferenceData } from "@/lib/preferences/types";
 
-// Candidate scoring (Feature 6) is application logic. Preference weights are
-// supplied by the caller — Feature 8 will feed learned weights here; until then
-// callers pass an empty object and scoring falls back to coherence heuristics.
-// The LLM may re-rank the top candidates and explain, but the base score is
-// deterministic app logic, never a model decision.
-
-/**
- * Inspectable preference weights (mirrors `Preference.data`, Feature 8).
- * Positive values reward, negative penalize. All keys optional.
- */
-export interface PreferenceWeights {
-  colors?: Record<string, number>;
-  categories?: Partial<Record<Category, number>>;
-}
+// Candidate scoring (Feature 6) folds in the learned preference model
+// (Feature 8). Preference weights are supplied by the caller — an empty model
+// falls back to coherence heuristics alone. The LLM may re-rank the top
+// candidates and explain, but the base score is deterministic app logic.
 
 /**
- * Score one candidate's items given the interpreted intent and optional learned
- * preferences. Higher is better. Pure and deterministic given the same input.
+ * Score one candidate's items given the interpreted intent and the user's
+ * learned preferences. Higher is better. Pure and deterministic.
  */
 export function scoreCandidate(
   items: WardrobeItem[],
   intent: OutfitIntent,
-  weights: PreferenceWeights = {},
+  prefs: PreferenceData = emptyPreferences(),
 ): number {
   let score = 0;
   const hasOuterwear = items.some((i) => i.category === Category.OUTERWEAR);
@@ -35,14 +27,20 @@ export function scoreCandidate(
 
     // Learned preferences (Feature 8): color and category weights.
     if (item.color) {
-      const w = weights.colors?.[item.color.toLowerCase()];
+      const w = prefs.colors[item.color.toLowerCase()];
       if (w) score += w;
     }
-    const catWeight = weights.categories?.[item.category];
+    const catWeight = prefs.categories[item.category];
     if (catWeight) score += catWeight;
 
     // Reward items whose descriptors echo the interpreted request.
     score += descriptorOverlap(item.descriptors, intent.descriptors) * 0.5;
+  }
+
+  // Learned pairing preferences: which items tested well or poorly together.
+  for (const key of pairKeys(items.map((i) => i.id))) {
+    const w = prefs.pairings[key];
+    if (w) score += w * 0.5;
   }
 
   // Weather coherence: outerwear helps when cold/wet, hurts when hot.

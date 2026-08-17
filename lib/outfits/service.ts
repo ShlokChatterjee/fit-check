@@ -4,10 +4,10 @@ import { interpretRequest } from "@/lib/ai/interpret-request";
 import { generateOutfitExplanation } from "@/lib/ai/generate-outfit-explanation";
 import type { OutfitIntent } from "@/lib/ai/types";
 import { listWardrobe } from "@/lib/wardrobe/service";
+import { loadPreferences, recordOutfitFeedback } from "@/lib/preferences/service";
 
 import { buildRankedCandidates } from "./candidates";
 import { missingRequiredSlots } from "./constraints";
-import type { PreferenceWeights } from "./scoring";
 import {
   OutfitNotFoundError,
   type GenerateOutfitResult,
@@ -40,8 +40,8 @@ export async function generateOutfit(
   }
 
   const intent = await interpretRequest(request);
-  const weights = await loadPreferenceWeights(userId);
-  const candidates = buildRankedCandidates(active, intent, weights);
+  const prefs = await loadPreferences(userId);
+  const candidates = buildRankedCandidates(active, intent, prefs);
 
   // Defensive: baseline is met but no complete candidate could be formed.
   if (candidates.length === 0) {
@@ -54,10 +54,10 @@ export async function generateOutfit(
 
 /**
  * Advance to the next-ranked candidate of a previously served outfit. Skipping
- * the current outfit is a soft-negative signal (weaker than an explicit
- * dislike); recording that into preferences is Feature 8. Re-validates every
- * stored item reference against the currently owned, active wardrobe, skipping
- * candidates that are no longer buildable.
+ * the current outfit records a soft-negative signal (Feature 8) — weaker than an
+ * explicit dislike. Re-validates every stored item reference against the
+ * currently owned, active wardrobe, skipping candidates that are no longer
+ * buildable.
  */
 export async function showAnotherOutfit(
   userId: string,
@@ -73,6 +73,9 @@ export async function showAnotherOutfit(
   const context = previous.context as unknown as StoredOutfitContext;
   const active = await listWardrobe(userId, { activeOnly: true });
   const byId = new Map(active.map((item) => [item.id, item]));
+
+  // The user is leaving the current candidate: fold in the soft-negative skip.
+  await recordSkip(userId, context.candidates[context.cursor], byId);
 
   // Walk forward from the current cursor to the next still-buildable candidate.
   for (let cursor = context.cursor + 1; cursor < context.candidates.length; cursor++) {
@@ -93,11 +96,20 @@ export async function showAnotherOutfit(
   return { status: "no_more" };
 }
 
-/** Read the user's inspectable preference weights (Feature 8 store, if present). */
-async function loadPreferenceWeights(userId: string): Promise<PreferenceWeights> {
-  const preference = await prisma.preference.findUnique({ where: { userId } });
-  if (!preference?.data) return {};
-  return preference.data as unknown as PreferenceWeights;
+/** Record the soft-negative skip for a candidate the user is leaving behind. */
+async function recordSkip(
+  userId: string,
+  skipped: StoredOutfitContext["candidates"][number] | undefined,
+  byId: Map<string, WardrobeItem>,
+): Promise<void> {
+  if (!skipped) return;
+  const items = skipped.items
+    .map((ref) => byId.get(ref.wardrobeItemId))
+    .filter((item): item is WardrobeItem => Boolean(item))
+    .map((item) => ({ id: item.id, category: item.category, color: item.color }));
+  if (items.length > 0) {
+    await recordOutfitFeedback(userId, items, "skip");
+  }
 }
 
 /** Persist a freshly ranked candidate at the given cursor and serve it. */

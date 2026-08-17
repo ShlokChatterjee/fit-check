@@ -13,11 +13,16 @@ vi.mock("@/lib/ai/interpret-request", () => ({ interpretRequest: vi.fn() }));
 vi.mock("@/lib/ai/generate-outfit-explanation", () => ({
   generateOutfitExplanation: vi.fn(),
 }));
+vi.mock("@/lib/preferences/service", () => ({
+  loadPreferences: vi.fn().mockResolvedValue({ colors: {}, categories: {}, pairings: {} }),
+  recordOutfitFeedback: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "@/lib/db/prisma";
 import { listWardrobe } from "@/lib/wardrobe/service";
 import { interpretRequest } from "@/lib/ai/interpret-request";
 import { generateOutfitExplanation } from "@/lib/ai/generate-outfit-explanation";
+import { recordOutfitFeedback } from "@/lib/preferences/service";
 
 import { generateOutfit, showAnotherOutfit } from "./service";
 import { OutfitNotFoundError, type StoredOutfitContext } from "./types";
@@ -28,6 +33,7 @@ const preference = prisma.preference as unknown as Record<string, ReturnType<typ
 const listWardrobeMock = listWardrobe as unknown as ReturnType<typeof vi.fn>;
 const interpretMock = interpretRequest as unknown as ReturnType<typeof vi.fn>;
 const explanationMock = generateOutfitExplanation as unknown as ReturnType<typeof vi.fn>;
+const recordFeedbackMock = recordOutfitFeedback as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -133,6 +139,8 @@ describe("showAnotherOutfit", () => {
     expect(result.outfit.items.some((i) => i.wardrobeItemId === "top-2")).toBe(true);
     expect(result.outfit.hasMore).toBe(false);
     expect(outfit.create.mock.calls[0][0].data.context.cursor).toBe(1);
+    // Skipping the current candidate records a soft-negative signal.
+    expect(recordFeedbackMock).toHaveBeenCalledWith("user-1", expect.any(Array), "skip");
   });
 
   it("returns no_more when the cursor is at the last candidate", async () => {
