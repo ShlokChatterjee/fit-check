@@ -42,6 +42,9 @@ next-env.d.ts
 
 /app/generated/prisma
 
+# Local dev image uploads (Feature 3 device-upload storage)
+/public/uploads/
+
 # Prisma init agent-skill packs (editor tooling, not app code)
 /.agents/
 /.windsurf/
